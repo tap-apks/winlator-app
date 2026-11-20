@@ -2,6 +2,7 @@ package com.winlator;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -32,6 +33,7 @@ import androidx.preference.PreferenceManager;
 
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 import com.google.android.material.navigation.NavigationView;
+
 import com.winlator.contentdialog.AboutDialog;
 import com.winlator.core.AppUtils;
 import com.winlator.core.Callback;
@@ -43,17 +45,21 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-public class MainActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener {
+public class MainActivity extends AppCompatActivity
+        implements NavigationView.OnNavigationItemSelectedListener {
 
     public static final boolean DEBUG_MODE = false;
 
-    public static final @IntRange(from = 1, to = 19) byte CONTAINER_PATTERN_COMPRESSION_LEVEL = 9;
+    public static final @IntRange(from = 1, to = 19)
+    byte CONTAINER_PATTERN_COMPRESSION_LEVEL = 9;
 
     public static final byte PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE = 1;
     public static final byte OPEN_FILE_REQUEST_CODE = 2;
@@ -63,25 +69,37 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
     private DrawerLayout drawerLayout;
 
-    public final PreloaderDialog preloaderDialog = new PreloaderDialog(this);
+    public final PreloaderDialog preloaderDialog =
+            new PreloaderDialog(this);
 
     private boolean editInputControls = false;
+
     private int selectedProfileId;
 
     private Callback<Uri> openFileCallback;
+
     private SharedPreferences preferences;
+
     private Fragment currentFragment;
+
+    // --------------------------------------------------
+    // ACTIVITY
+    // --------------------------------------------------
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+
         AppUtils.setActivityTheme(this);
+
         super.onCreate(savedInstanceState);
 
         setContentView(R.layout.main_activity);
 
         drawerLayout = findViewById(R.id.DrawerLayout);
 
-        NavigationView navigationView = findViewById(R.id.NavigationView);
+        NavigationView navigationView =
+                findViewById(R.id.NavigationView);
+
         navigationView.setNavigationItemSelectedListener(this);
 
         setSupportActionBar(findViewById(R.id.Toolbar));
@@ -89,40 +107,56 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         ActionBar actionBar = getSupportActionBar();
 
         if (actionBar != null) {
+
             actionBar.setDisplayHomeAsUpEnabled(true);
+
             actionBar.setTitle("PC Game Launcher");
         }
 
-        preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        preferences =
+                PreferenceManager.getDefaultSharedPreferences(this);
 
         Intent intent = getIntent();
 
-        editInputControls = intent.getBooleanExtra("edit_input_controls", false);
+        editInputControls =
+                intent.getBooleanExtra("edit_input_controls", false);
 
         if (editInputControls) {
 
-            selectedProfileId = intent.getIntExtra("selected_profile_id", 0);
+            selectedProfileId =
+                    intent.getIntExtra("selected_profile_id", 0);
 
             if (actionBar != null) {
-                actionBar.setHomeAsUpIndicator(R.drawable.icon_action_bar_back);
+
+                actionBar.setHomeAsUpIndicator(
+                        R.drawable.icon_action_bar_back
+                );
             }
 
             onNavigationItemSelected(
-                    navigationView.getMenu().findItem(R.id.menu_item_input_controls)
+                    navigationView.getMenu().findItem(
+                            R.id.menu_item_input_controls
+                    )
             );
 
-            navigationView.setCheckedItem(R.id.menu_item_input_controls);
+            navigationView.setCheckedItem(
+                    R.id.menu_item_input_controls
+            );
 
         } else {
 
-            int selectedMenuItemId = intent.getIntExtra("selected_menu_item_id", 0);
+            int selectedMenuItemId =
+                    intent.getIntExtra("selected_menu_item_id", 0);
 
             int menuItemId = selectedMenuItemId > 0
                     ? selectedMenuItemId
                     : R.id.menu_item_shortcuts;
 
             if (actionBar != null) {
-                actionBar.setHomeAsUpIndicator(R.drawable.icon_action_bar_menu);
+
+                actionBar.setHomeAsUpIndicator(
+                        R.drawable.icon_action_bar_menu
+                );
             }
 
             onNavigationItemSelected(
@@ -132,19 +166,33 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             navigationView.setCheckedItem(menuItemId);
 
             if (!requestAppPermissions()) {
+
                 RootFSInstaller.installIfNeeded(this);
             }
 
-            int containerId = intent.getIntExtra("container_id", 0);
-            String startPath = intent.getStringExtra("start_path");
+            int containerId =
+                    intent.getIntExtra("container_id", 0);
+
+            String startPath =
+                    intent.getStringExtra("start_path");
 
             if (containerId > 0 && startPath != null) {
-                showFragment(new ContainerFileManagerFragment(containerId, startPath));
+
+                showFragment(
+                        new ContainerFileManagerFragment(
+                                containerId,
+                                startPath
+                        )
+                );
             }
 
             setupImportZipButton();
         }
     }
+
+    // --------------------------------------------------
+    // IMPORT ZIP BUTTON
+    // --------------------------------------------------
 
     private void setupImportZipButton() {
 
@@ -160,29 +208,43 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                 )
         );
 
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
+        FrameLayout.LayoutParams params =
+                new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                );
 
         params.gravity = Gravity.BOTTOM | Gravity.END;
 
         int margin = (int) (
-                20 * getResources().getDisplayMetrics().density
+                20 * getResources()
+                        .getDisplayMetrics()
+                        .density
         );
 
-        params.setMargins(margin, margin, margin, margin);
+        params.setMargins(
+                margin,
+                margin,
+                margin,
+                margin
+        );
 
         addContentView(fabImport, params);
 
         fabImport.setOnClickListener(v -> {
 
-            Intent pickZipIntent = new Intent(
-                    Intent.ACTION_OPEN_DOCUMENT
+            Intent pickZipIntent =
+                    new Intent(Intent.ACTION_OPEN_DOCUMENT);
+
+            pickZipIntent.addCategory(
+                    Intent.CATEGORY_OPENABLE
             );
 
-            pickZipIntent.addCategory(Intent.CATEGORY_OPENABLE);
             pickZipIntent.setType("application/zip");
+
+            pickZipIntent.addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+            );
 
             startActivityForResult(
                     pickZipIntent,
@@ -191,13 +253,33 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         });
     }
 
+    // --------------------------------------------------
+    // EXTRACT GAME ZIP
+    // --------------------------------------------------
+
     private void extractGameZip(Uri zipUri) {
 
-        preloaderDialog.show("Mengekstrak Game PC (.zip)...");
+        ProgressDialog progressDialog =
+                new ProgressDialog(this);
+
+        progressDialog.setTitle("Import Game");
+
+        progressDialog.setMessage(
+                "Mengekstrak Game PC (.zip)..."
+        );
+
+        progressDialog.setProgressStyle(
+                ProgressDialog.STYLE_SPINNER
+        );
+
+        progressDialog.setCancelable(false);
+
+        progressDialog.show();
 
         Executors.newSingleThreadExecutor().execute(() -> {
 
-            List<String> foundExeFiles = new ArrayList<>();
+            List<String> foundExeFiles =
+                    new ArrayList<>();
 
             try {
 
@@ -208,74 +290,125 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                         "WinlatorGames"
                 );
 
-                if (!destDir.exists()) {
-                    destDir.mkdirs();
+                if (!destDir.exists() && !destDir.mkdirs()) {
+
+                    throw new Exception(
+                            "Tidak dapat membuat folder tujuan."
+                    );
                 }
+
+                String canonicalDest =
+                        destDir.getCanonicalPath()
+                                + File.separator;
 
                 InputStream inputStream =
                         getContentResolver().openInputStream(zipUri);
 
                 if (inputStream == null) {
-                    throw new Exception("Tidak dapat membuka file ZIP.");
-                }
 
-                ZipInputStream zis = new ZipInputStream(
-                        new BufferedInputStream(inputStream)
-                );
-
-                ZipEntry entry;
-
-                byte[] buffer = new byte[8192];
-
-                while ((entry = zis.getNextEntry()) != null) {
-
-                    File newFile = new File(
-                            destDir,
-                            entry.getName()
+                    throw new Exception(
+                            "Tidak dapat membuka file ZIP."
                     );
-
-                    if (!newFile.getCanonicalPath().startsWith(
-                            destDir.getCanonicalPath() + File.separator
-                    )) {
-                        zis.closeEntry();
-                        continue;
-                    }
-
-                    if (entry.isDirectory()) {
-
-                        newFile.mkdirs();
-
-                    } else {
-
-                        File parent = newFile.getParentFile();
-
-                        if (parent != null && !parent.exists()) {
-                            parent.mkdirs();
-                        }
-
-                        FileOutputStream fos = new FileOutputStream(newFile);
-
-                        int count;
-
-                        while ((count = zis.read(buffer)) != -1) {
-                            fos.write(buffer, 0, count);
-                        }
-
-                        fos.close();
-
-                        if (newFile.getName().toLowerCase().endsWith(".exe")) {
-                            foundExeFiles.add(newFile.getAbsolutePath());
-                        }
-                    }
-
-                    zis.closeEntry();
                 }
 
-                zis.close();
+                try (
+                        ZipInputStream zis =
+                                new ZipInputStream(
+                                        new BufferedInputStream(
+                                                inputStream
+                                        )
+                                )
+                ) {
+
+                    ZipEntry entry;
+
+                    byte[] buffer = new byte[8192];
+
+                    while ((entry = zis.getNextEntry()) != null) {
+
+                        try {
+
+                            File newFile = new File(
+                                    destDir,
+                                    entry.getName()
+                            );
+
+                            String canonicalPath =
+                                    newFile.getCanonicalPath();
+
+                            // ZIP SLIP PROTECTION
+
+                            if (!canonicalPath.startsWith(
+                                    canonicalDest
+                            )) {
+
+                                continue;
+                            }
+
+                            if (entry.isDirectory()) {
+
+                                if (!newFile.exists()) {
+                                    newFile.mkdirs();
+                                }
+
+                            } else {
+
+                                File parent =
+                                        newFile.getParentFile();
+
+                                if (parent != null &&
+                                        !parent.exists()) {
+
+                                    parent.mkdirs();
+                                }
+
+                                try (
+                                        FileOutputStream fos =
+                                                new FileOutputStream(
+                                                        newFile
+                                                )
+                                ) {
+
+                                    int count;
+
+                                    while ((count = zis.read(buffer)) != -1) {
+
+                                        fos.write(
+                                                buffer,
+                                                0,
+                                                count
+                                        );
+                                    }
+                                }
+
+                                // DETECT EXE FILES
+
+                                if (newFile.getName()
+                                        .toLowerCase(Locale.ROOT)
+                                        .endsWith(".exe")) {
+
+                                    foundExeFiles.add(
+                                            newFile.getAbsolutePath()
+                                    );
+                                }
+                            }
+
+                        } finally {
+
+                            zis.closeEntry();
+                        }
+                    }
+                }
+
+                // SUCCESS
 
                 runOnUiThread(() -> {
 
-                    preloaderDialog.close();
+                    if (isFinishing() || isDestroyed()) {
+                        return;
+                    }
+
+                    progressDialog.dismiss();
 
                     showExtractedResultDialog(
                             destDir.getAbsolutePath(),
@@ -287,11 +420,16 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
                 runOnUiThread(() -> {
 
-                    preloaderDialog.close();
+                    if (isFinishing() || isDestroyed()) {
+                        return;
+                    }
+
+                    progressDialog.dismiss();
 
                     Toast.makeText(
                             this,
-                            "Gagal mengekstrak ZIP: " + e.getMessage(),
+                            "Gagal mengekstrak ZIP: "
+                                    + e.getMessage(),
                             Toast.LENGTH_LONG
                     ).show();
                 });
@@ -299,32 +437,42 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         });
     }
 
+    // --------------------------------------------------
+    // EXTRACTION RESULT
+    // --------------------------------------------------
+
     private void showExtractedResultDialog(
             String folderPath,
             List<String> exeFiles
     ) {
 
-        StringBuilder message = new StringBuilder(
-                "Game berhasil diekstrak ke:\n"
-                        + folderPath
-                        + "\n\n"
-        );
+        StringBuilder message =
+                new StringBuilder(
+                        "Game berhasil diekstrak ke:\n"
+                                + folderPath
+                                + "\n\n"
+                );
 
         if (exeFiles.isEmpty()) {
 
             message.append(
                     "Tidak ditemukan file .exe secara otomatis. "
-                            + "Silakan cek folder secara manual di Drive D:"
+                            + "Silakan cek folder secara manual "
+                            + "di Drive D:"
             );
 
         } else {
 
-            message.append("File .exe terdeteksi:\n");
+            message.append(
+                    "File .exe terdeteksi:\n"
+            );
 
             for (String exe : exeFiles) {
 
                 message.append("• ")
-                        .append(new File(exe).getName())
+                        .append(
+                                new File(exe).getName()
+                        )
                         .append("\n");
             }
 
@@ -335,23 +483,44 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         }
 
         new AlertDialog.Builder(this)
+
                 .setTitle("Import Game Selesai")
+
                 .setMessage(message.toString())
+
                 .setPositiveButton(
                         "Buka Container",
-                        (dialog, which) ->
-                                showFragment(new ContainersFragment())
+                        (dialog, which) -> {
+
+                            showFragment(
+                                    new ContainersFragment()
+                            );
+                        }
                 )
-                .setNegativeButton("Tutup", null)
+
+                .setNegativeButton(
+                        "Tutup",
+                        null
+                )
+
                 .show();
     }
 
+    // --------------------------------------------------
+    // LOCALE
+    // --------------------------------------------------
+
     @Override
     protected void attachBaseContext(Context newBase) {
+
         super.attachBaseContext(
                 LocaleHelper.setSystemLocale(newBase)
         );
     }
+
+    // --------------------------------------------------
+    // PERMISSIONS RESULT
+    // --------------------------------------------------
 
     @Override
     public void onRequestPermissionsResult(
@@ -366,10 +535,12 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                 grantResults
         );
 
-        if (requestCode == PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE) {
+        if (requestCode ==
+                PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE) {
 
             if (grantResults.length > 0 &&
-                    grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    grantResults[0] ==
+                            PackageManager.PERMISSION_GRANTED) {
 
                 RootFSInstaller.installIfNeeded(this);
 
@@ -379,6 +550,10 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             }
         }
     }
+
+    // --------------------------------------------------
+    // ACTIVITY RESULT
+    // --------------------------------------------------
 
     @Override
     public void onActivityResult(
@@ -399,22 +574,31 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
             if (openFileCallback != null) {
 
-                openFileCallback.call(data.getData());
+                openFileCallback.call(
+                        data.getData()
+                );
 
                 openFileCallback = null;
             }
 
-        } else if (requestCode == IMPORT_ZIP_REQUEST_CODE &&
-                resultCode == Activity.RESULT_OK &&
-                data != null) {
+        } else if (
+                requestCode == IMPORT_ZIP_REQUEST_CODE &&
+                        resultCode == Activity.RESULT_OK &&
+                        data != null
+        ) {
 
             Uri zipUri = data.getData();
 
             if (zipUri != null) {
+
                 extractGameZip(zipUri);
             }
         }
     }
+
+    // --------------------------------------------------
+    // CONFIGURATION CHANGED
+    // --------------------------------------------------
 
     @Override
     public void onConfigurationChanged(
@@ -423,19 +607,31 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
         super.onConfigurationChanged(newConfig);
 
-        if ((newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE ||
-                newConfig.orientation == Configuration.ORIENTATION_PORTRAIT) &&
-                currentFragment instanceof BaseFileManagerFragment) {
+        if (
+                (
+                        newConfig.orientation ==
+                                Configuration.ORIENTATION_LANDSCAPE ||
+
+                        newConfig.orientation ==
+                                Configuration.ORIENTATION_PORTRAIT
+                ) &&
+                currentFragment instanceof BaseFileManagerFragment
+        ) {
 
             ((BaseFileManagerFragment) currentFragment)
                     .onOrientationChanged();
         }
     }
 
+    // --------------------------------------------------
+    // BACK PRESSED
+    // --------------------------------------------------
+
     @Override
     public void onBackPressed() {
 
-        if (currentFragment != null && currentFragment.isVisible()) {
+        if (currentFragment != null &&
+                currentFragment.isVisible()) {
 
             if (currentFragment instanceof BaseFileManagerFragment) {
 
@@ -452,16 +648,30 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             ) {
 
                 finish();
+
                 return;
             }
         }
 
-        showFragment(new ShortcutsFragment());
+        showFragment(
+                new ShortcutsFragment()
+        );
     }
 
-    public void setOpenFileCallback(Callback<Uri> openFileCallback) {
+    // --------------------------------------------------
+    // OPEN FILE CALLBACK
+    // --------------------------------------------------
+
+    public void setOpenFileCallback(
+            Callback<Uri> openFileCallback
+    ) {
+
         this.openFileCallback = openFileCallback;
     }
+
+    // --------------------------------------------------
+    // REQUEST APP PERMISSIONS
+    // --------------------------------------------------
 
     private boolean requestAppPermissions() {
 
@@ -476,11 +686,14 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                         Manifest.permission.READ_EXTERNAL_STORAGE
                 ) == PackageManager.PERMISSION_GRANTED
         ) {
+
             return false;
         }
 
-        String[] permissions = new String[]{
+        String[] permissions = new String[] {
+
                 Manifest.permission.WRITE_EXTERNAL_STORAGE,
+
                 Manifest.permission.READ_EXTERNAL_STORAGE
         };
 
@@ -493,8 +706,14 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         return true;
     }
 
+    // --------------------------------------------------
+    // OPTIONS MENU
+    // --------------------------------------------------
+
     @Override
-    public boolean onOptionsItemSelected(MenuItem menuItem) {
+    public boolean onOptionsItemSelected(
+            MenuItem menuItem
+    ) {
 
         int itemId = menuItem.getItemId();
 
@@ -512,6 +731,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             if (editInputControls) {
 
                 setResult(RESULT_OK);
+
                 finish();
 
             } else {
@@ -522,21 +742,31 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                             (BaseFileManagerFragment) currentFragment;
 
                     if (fileManagerFragment.onOptionsMenuClicked()) {
+
                         return true;
                     }
                 }
 
-                drawerLayout.openDrawer(GravityCompat.START);
+                drawerLayout.openDrawer(
+                        GravityCompat.START
+                );
             }
 
             return true;
         }
     }
 
-    @Override
-    public boolean onNavigationItemSelected(@NonNull MenuItem item) {
+    // --------------------------------------------------
+    // NAVIGATION
+    // --------------------------------------------------
 
-        FragmentManager fragmentManager = getSupportFragmentManager();
+    @Override
+    public boolean onNavigationItemSelected(
+            @NonNull MenuItem item
+    ) {
+
+        FragmentManager fragmentManager =
+                getSupportFragmentManager();
 
         if (fragmentManager.getBackStackEntryCount() > 0) {
 
@@ -551,49 +781,82 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             case R.id.menu_item_shortcuts:
 
                 preferences.edit()
-                        .putBoolean("show_shortcuts_first", true)
+                        .putBoolean(
+                                "show_shortcuts_first",
+                                true
+                        )
                         .apply();
 
-                showFragment(new ShortcutsFragment());
+                showFragment(
+                        new ShortcutsFragment()
+                );
+
                 break;
 
             case R.id.menu_item_containers:
 
                 preferences.edit()
-                        .putBoolean("show_shortcuts_first", false)
+                        .putBoolean(
+                                "show_shortcuts_first",
+                                false
+                        )
                         .apply();
 
-                showFragment(new ContainersFragment());
+                showFragment(
+                        new ContainersFragment()
+                );
+
                 break;
 
             case R.id.menu_item_input_controls:
 
-                showFragment(new InputControlsFragment(selectedProfileId));
+                showFragment(
+                        new InputControlsFragment(
+                                selectedProfileId
+                        )
+                );
+
                 break;
 
             case R.id.menu_item_settings:
 
-                showFragment(new SettingsFragment());
+                showFragment(
+                        new SettingsFragment()
+                );
+
                 break;
 
             case R.id.menu_item_about:
 
                 (new AboutDialog(this)).show();
+
                 break;
         }
 
         return true;
     }
 
+    // --------------------------------------------------
+    // SHOW FRAGMENT
+    // --------------------------------------------------
+
     public void showFragment(Fragment fragment) {
 
-        FragmentManager fragmentManager = getSupportFragmentManager();
+        FragmentManager fragmentManager =
+                getSupportFragmentManager();
 
         fragmentManager.beginTransaction()
-                .replace(R.id.FLFragmentContainer, fragment)
+
+                .replace(
+                        R.id.FLFragmentContainer,
+                        fragment
+                )
+
                 .commit();
 
-        drawerLayout.closeDrawer(GravityCompat.START);
+        drawerLayout.closeDrawer(
+                GravityCompat.START
+        );
 
         currentFragment = fragment;
     }
