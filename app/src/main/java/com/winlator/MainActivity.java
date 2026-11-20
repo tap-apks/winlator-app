@@ -9,12 +9,18 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
+import android.view.Gravity;
 import android.view.MenuItem;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.Toast;
 
 import androidx.annotation.IntRange;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.ActionBar;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -24,6 +30,7 @@ import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.preference.PreferenceManager;
 
+import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 import com.google.android.material.navigation.NavigationView;
 import com.winlator.contentdialog.AboutDialog;
 import com.winlator.core.AppUtils;
@@ -32,13 +39,25 @@ import com.winlator.core.LocaleHelper;
 import com.winlator.core.PreloaderDialog;
 import com.winlator.xenvironment.RootFSInstaller;
 
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
 public class MainActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener {
-    public static final boolean DEBUG_MODE = false; // FIXME change to false
+    public static final boolean DEBUG_MODE = false;
     public static final @IntRange(from = 1, to = 19) byte CONTAINER_PATTERN_COMPRESSION_LEVEL = 9;
     public static final byte PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE = 1;
     public static final byte OPEN_FILE_REQUEST_CODE = 2;
     public static final byte EDIT_INPUT_CONTROLS_REQUEST_CODE = 3;
     public static final byte OPEN_DIRECTORY_REQUEST_CODE = 4;
+    public static final byte IMPORT_ZIP_REQUEST_CODE = 5;
+
     private DrawerLayout drawerLayout;
     public final PreloaderDialog preloaderDialog = new PreloaderDialog(this);
     private boolean editInputControls = false;
@@ -59,7 +78,10 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
         setSupportActionBar(findViewById(R.id.Toolbar));
         ActionBar actionBar = getSupportActionBar();
-        actionBar.setDisplayHomeAsUpEnabled(true);
+        if (actionBar != null) {
+            actionBar.setDisplayHomeAsUpEnabled(true);
+            actionBar.setTitle("PC Game Launcher");
+        }
 
         preferences = PreferenceManager.getDefaultSharedPreferences(this);
 
@@ -67,16 +89,15 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         editInputControls = intent.getBooleanExtra("edit_input_controls", false);
         if (editInputControls) {
             selectedProfileId = intent.getIntExtra("selected_profile_id", 0);
-            actionBar.setHomeAsUpIndicator(R.drawable.icon_action_bar_back);
+            if (actionBar != null) actionBar.setHomeAsUpIndicator(R.drawable.icon_action_bar_back);
             onNavigationItemSelected(navigationView.getMenu().findItem(R.id.menu_item_input_controls));
             navigationView.setCheckedItem(R.id.menu_item_input_controls);
         }
         else {
-            boolean showShortcutsFirst = preferences.getBoolean("show_shortcuts_first", false);
             int selectedMenuItemId = intent.getIntExtra("selected_menu_item_id", 0);
-            int menuItemId = selectedMenuItemId > 0 ? selectedMenuItemId : (showShortcutsFirst ? R.id.menu_item_shortcuts : R.id.menu_item_containers);
+            int menuItemId = selectedMenuItemId > 0 ? selectedMenuItemId : R.id.menu_item_shortcuts;
 
-            actionBar.setHomeAsUpIndicator(R.drawable.icon_action_bar_menu);
+            if (actionBar != null) actionBar.setHomeAsUpIndicator(R.drawable.icon_action_bar_menu);
             onNavigationItemSelected(navigationView.getMenu().findItem(menuItemId));
             navigationView.setCheckedItem(menuItemId);
             if (!requestAppPermissions()) RootFSInstaller.installIfNeeded(this);
@@ -86,7 +107,103 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             if (containerId > 0 && startPath != null) {
                 showFragment(new ContainerFileManagerFragment(containerId, startPath));
             }
+
+            setupImportZipButton();
         }
+    }
+
+    private void setupImportZipButton() {
+        ExtendedFloatingActionButton fabImport = new ExtendedFloatingActionButton(this);
+        fabImport.setText("Import Game (.zip)");
+        fabImport.setIcon(ContextCompat.getDrawable(this, android.R.drawable.ic_input_add));
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.gravity = Gravity.BOTTOM | Gravity.END;
+        int margin = (int) (20 * getResources().getDisplayMetrics().density);
+        params.setMargins(margin, margin, margin, margin);
+
+        addContentView(fabImport, params);
+
+        fabImport.setOnClickListener(v -> {
+            Intent pickZipIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            pickZipIntent.addCategory(Intent.CATEGORY_OPENABLE);
+            pickZipIntent.setType("application/zip");
+            startActivityForResult(pickZipIntent, IMPORT_ZIP_REQUEST_CODE);
+        });
+    }
+
+    private void extractGameZip(Uri zipUri) {
+        preloaderDialog.show("Mengekstrak Game PC (.zip)...");
+        Executors.newSingleThreadExecutor().execute(() -> {
+            List<String> foundExeFiles = new ArrayList<>();
+            try {
+                File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "WinlatorGames");
+                if (!destDir.exists()) destDir.mkdirs();
+
+                InputStream inputStream = getContentResolver().openInputStream(zipUri);
+                ZipInputStream zis = new ZipInputStream(new BufferedInputStream(inputStream));
+                ZipEntry entry;
+                byte[] buffer = new byte[8192];
+
+                while ((entry = zis.getNextEntry()) != null) {
+                    File newFile = new File(destDir, entry.getName());
+                    if (!newFile.getCanonicalPath().startsWith(destDir.getCanonicalPath() + File.separator)) {
+                        continue;
+                    }
+                    if (entry.isDirectory()) {
+                        newFile.mkdirs();
+                    } else {
+                        File parent = newFile.getParentFile();
+                        if (parent != null && !parent.exists()) parent.mkdirs();
+                        FileOutputStream fos = new FileOutputStream(newFile);
+                        int count;
+                        while ((count = zis.read(buffer)) != -1) {
+                            fos.write(buffer, 0, count);
+                        }
+                        fos.close();
+
+                        if (newFile.getName().toLowerCase().endsWith(".exe")) {
+                            foundExeFiles.add(newFile.getAbsolutePath());
+                        }
+                    }
+                    zis.closeEntry();
+                }
+                zis.close();
+
+                runOnUiThread(() -> {
+                    preloaderDialog.close();
+                    showExtractedResultDialog(destDir.getAbsolutePath(), foundExeFiles);
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    preloaderDialog.close();
+                    Toast.makeText(this, "Gagal mengekstrak ZIP: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void showExtractedResultDialog(String folderPath, List<String> exeFiles) {
+        StringBuilder message = new StringBuilder("Game berhasil diekstrak ke:\n" + folderPath + "\n\n");
+        if (exeFiles.isEmpty()) {
+            message.append("Tidak ditemukan file .exe secara otomatis. Silakan cek folder secara manual di Drive D:");
+        } else {
+            message.append("File .exe terdeteksi:\n");
+            for (String exe : exeFiles) {
+                message.append("• ").append(new File(exe).getName()).append("\n");
+            }
+            message.append("\nBuka Container (Drive D:/WinlatorGames) untuk menjalankan game.");
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Import Game Selesai")
+                .setMessage(message.toString())
+                .setPositiveButton("Buka Container", (dialog, which) -> showFragment(new ContainersFragment()))
+                .setNegativeButton("Tutup", null)
+                .show();
     }
 
     @Override
@@ -108,112 +225,109 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     @Override
     public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == MainActivity.OPEN_FILE_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
-            if (openFileCallback != null) {
-                openFileCallback.call(data.getData());
-                openFileCallback = null;
-            }
-        }
-    }
-
-    @Override
-    public void onConfigurationChanged(@NonNull Configuration newConfig) {
-        super.onConfigurationChanged(newConfig);
-        if ((newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE ||
-            newConfig.orientation == Configuration.ORIENTATION_PORTRAIT) && currentFragment instanceof BaseFileManagerFragment) {
-            ((BaseFileManagerFragment)currentFragment).onOrientationChanged();
-        }
-    }
-
-    @Override
-    public void onBackPressed() {
-        if (currentFragment != null && currentFragment.isVisible()) {
-            if (currentFragment instanceof BaseFileManagerFragment) {
-                BaseFileManagerFragment fileManagerFragment = (BaseFileManagerFragment)currentFragment;
-                if (fileManagerFragment.onBackPressed()) return;
-            }
-            else if (currentFragment instanceof ContainersFragment) {
-                finish();
-            }
-        }
-
-        showFragment(new ContainersFragment());
-    }
-
-    public void setOpenFileCallback(Callback<Uri> openFileCallback) {
-        this.openFileCallback = openFileCallback;
-    }
-
-    private boolean requestAppPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) return false;
-
-        String[] permissions = new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE};
-        ActivityCompat.requestPermissions(this, permissions, PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem menuItem) {
-        int itemId = menuItem.getItemId();
-        if (itemId == R.id.menu_item_add ||
-            itemId == R.id.menu_item_home ||
-            itemId == R.id.menu_item_view_style ||
-            itemId == R.id.menu_item_new_folder) {
-            return super.onOptionsItemSelected(menuItem);
-        }
-        else {
-            if (editInputControls) {
-                setResult(RESULT_OK);
-                finish();
-            }
-            else {
-                if (currentFragment instanceof BaseFileManagerFragment) {
-                    BaseFileManagerFragment fileManagerFragment = (BaseFileManagerFragment)currentFragment;
-                    if (fileManagerFragment.onOptionsMenuClicked()) return true;
-                }
-                drawerLayout.openDrawer(GravityCompat.START);
-            }
-            return true;
-        }
-    }
-
-    @Override
-    public boolean onNavigationItemSelected(@NonNull MenuItem item) {
-        FragmentManager fragmentManager = getSupportFragmentManager();
-        if (fragmentManager.getBackStackEntryCount() > 0) {
-            fragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE);
-        }
-
-        switch (item.getItemId()) {
-            case R.id.menu_item_shortcuts:
-                preferences.edit().putBoolean("show_shortcuts_first", true).apply();
-                showFragment(new ShortcutsFragment());
-                break;
-            case R.id.menu_item_containers:
-                preferences.edit().putBoolean("show_shortcuts_first", false).apply();
-                showFragment(new ContainersFragment());
-                break;
-            case R.id.menu_item_input_controls:
-                showFragment(new InputControlsFragment(selectedProfileId));
-                break;
-            case R.id.menu_item_settings:
-                showFragment(new SettingsFragment());
-                break;
-            case R.id.menu_item_about:
-                (new AboutDialog(this)).show();
-                break;
-        }
-        return true;
-    }
-
-    public void showFragment(Fragment fragment) {
-        FragmentManager fragmentManager = getSupportFragmentManager();
-        fragmentManager.beginTransaction()
-            .replace(R.id.FLFragmentContainer, fragment)
-            .commit();
-
-        drawerLayout.closeDrawer(GravityCompat.START);
-        currentFragment = fragment;
-    }
+Use code with caution.
+if (requestCode == MainActivity.OPEN_FILE_REQUEST_CODE && resultCode == Activity.RESULT_OK && data != null) {
+if (openFileCallback != null) {
+openFileCallback.call(data.getData());
+openFileCallback = null;
+}
+}
+else if (requestCode == IMPORT_ZIP_REQUEST_CODE && resultCode == Activity.RESULT_OK && data != null) {
+Uri zipUri = data.getData();
+if (zipUri != null) {
+extractGameZip(zipUri);
+}
+}
+}
+@Override
+public void onConfigurationChanged(@NonNull Configuration newConfig) {
+super.onConfigurationChanged(newConfig);
+if ((newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+newConfig.orientation == Configuration.ORIENTATION_PORTRAIT) && currentFragment instanceof BaseFileManagerFragment) {
+((BaseFileManagerFragment)currentFragment).onOrientationChanged();
+}
+}
+@Override
+public void onBackPressed() {
+if (currentFragment != null && currentFragment.isVisible()) {
+if (currentFragment instanceof BaseFileManagerFragment) {
+BaseFileManagerFragment fileManagerFragment = (BaseFileManagerFragment)currentFragment;
+if (fileManagerFragment.onBackPressed()) return;
+}
+else if (currentFragment instanceof ShortcutsFragment || currentFragment instanceof ContainersFragment) {
+finish();
+return;
+}
+}
+showFragment(new ShortcutsFragment());
+}
+public void setOpenFileCallback(Callback openFileCallback) {
+this.openFileCallback = openFileCallback;
+}
+private boolean requestAppPermissions() {
+if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) return false;
+String[] permissions = new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE};
+ActivityCompat.requestPermissions(this, permissions, PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE);
+return true;
+}
+@Override
+public boolean onOptionsItemSelected(MenuItem menuItem) {
+int itemId = menuItem.getItemId();
+if (itemId == R.id.menu_item_add ||
+itemId == R.id.menu_item_home ||
+itemId == R.id.menu_item_view_style ||
+itemId == R.id.menu_item_new_folder) {
+return super.onOptionsItemSelected(menuItem);
+}
+else {
+if (editInputControls) {
+setResult(RESULT_OK);
+finish();
+}
+else {
+if (currentFragment instanceof BaseFileManagerFragment) {
+BaseFileManagerFragment fileManagerFragment = (BaseFileManagerFragment)currentFragment;
+if (fileManagerFragment.onOptionsMenuClicked()) return true;
+}
+drawerLayout.openDrawer(GravityCompat.START);
+}
+return true;
+}
+}
+@Override
+public boolean onNavigationItemSelected(@NonNull MenuItem item) {
+FragmentManager fragmentManager = getSupportFragmentManager();
+if (fragmentManager.getBackStackEntryCount() > 0) {
+fragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE);
+}
+switch (item.getItemId()) {
+case R.id.menu_item_shortcuts:
+preferences.edit().putBoolean("show_shortcuts_first", true).apply();
+showFragment(new ShortcutsFragment());
+break;
+case R.id.menu_item_containers:
+preferences.edit().putBoolean("show_shortcuts_first", false).apply();
+showFragment(new ContainersFragment());
+break;
+case R.id.menu_item_input_controls:
+showFragment(new InputControlsFragment(selectedProfileId));
+break;
+case R.id.menu_item_settings:
+showFragment(new SettingsFragment());
+break;
+case R.id.menu_item_about:
+(new AboutDialog(this)).show();
+break;
+}
+return true;
+}
+public void showFragment(Fragment fragment) {
+FragmentManager fragmentManager = getSupportFragmentManager();
+fragmentManager.beginTransaction()
+.replace(R.id.FLFragmentContainer, fragment)
+.commit();
+drawerLayout.closeDrawer(GravityCompat.START);
+currentFragment = fragment;
+}
 }
